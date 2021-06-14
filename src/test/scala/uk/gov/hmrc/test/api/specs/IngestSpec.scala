@@ -19,7 +19,7 @@ package uk.gov.hmrc.test.api.specs
 import uk.gov.hmrc.test.api.models.User
 import uk.gov.hmrc.test.api.models.User._
 
-class ExampleSpec extends BaseSpec {
+class IngestSpec extends BaseSpec {
 
   Feature("Example of using the Individuals Matching API") {
 
