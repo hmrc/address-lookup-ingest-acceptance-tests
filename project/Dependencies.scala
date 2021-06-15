@@ -1,7 +1,6 @@
 import sbt._
 
 object Dependencies {
-
   private val awsSdkVersion = "2.16.83"
   val test                  = Seq(
     "software.amazon.awssdk" % "core"                    % awsSdkVersion,

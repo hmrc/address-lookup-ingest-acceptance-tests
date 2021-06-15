@@ -16,26 +16,28 @@
 
 package uk.gov.hmrc.test.api.specs
 
-import uk.gov.hmrc.test.api.models.User
-import uk.gov.hmrc.test.api.models.User._
+import org.scalatest.matchers.should.Matchers
+import org.scalatest.wordspec.AsyncWordSpec
+import software.amazon.awssdk.services.sfn.SfnClient
+import software.amazon.awssdk.services.sfn.model.ListStateMachinesResponse
 
-class IngestSpec extends BaseSpec {
+import scala.collection.JavaConverters._
 
-  Feature("Example of using the Individuals Matching API") {
+class IngestSpec extends AsyncWordSpec with Matchers {
+  "Bob" should {
+    "list step functions" when {
+      "list function api is called" in {
+        val sfnClient: SfnClient =
+          SfnClient
+            .builder()
+            .build()
 
-    Scenario("Get an individuals details by MatchId") {
-
-      Given("There is an existing individual with a MatchId")
-      val authBearerToken: String    = authHelper.getAuthBearerToken
-      val individualsMatchId: String = testDataHelper.createAnIndividual(authBearerToken, ninoUser)
-
-      When("I use that MatchId to retrieve the same individuals details")
-      val actualUser: User =
-        individualsMatchingHelper.getIndividualByMatchId(authBearerToken, individualsMatchId)
-
-      Then("I am returned the individuals details")
-      actualUser shouldBe ninoUser
+        val listStateMachinesResponse: ListStateMachinesResponse = sfnClient.listStateMachines()
+        listStateMachinesResponse.stateMachines().asScala.foreach { case sm =>
+          println(s" name: ${sm.name()}, arn: ${sm.stateMachineArn()}")
+        }
+        "a" shouldBe "b"
+      }
     }
-
   }
 }
