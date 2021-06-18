@@ -30,8 +30,7 @@ import software.amazon.awssdk.services.sfn.SfnClient
 import software.amazon.awssdk.services.sfn.model.{DescribeExecutionRequest, ExecutionStatus, StartExecutionRequest}
 
 import scala.collection.JavaConverters._
-import scala.concurrent.duration.DurationInt
-import scala.concurrent.{Await, ExecutionContext}
+import scala.concurrent.ExecutionContext
 import scala.util.Random
 
 class IngestSpec extends AsyncWordSpec with Matchers {
@@ -46,22 +45,22 @@ class IngestSpec extends AsyncWordSpec with Matchers {
   }
 
   "Data Ingest" should {
+    val testDataLambdaName = "addressLookupCopyTestDataLambdaFunction"
+    val stepFunctionName   = "addressLookupIngestStateMachine"
     val testEpoch = (Random.nextInt(9999) + 500).toString //Make sure that we dont have an actual epoch number
     val xtor: Aux[IO, Unit] = transactor
 
     "setup test data" when {
       "copyTestData function invoked" in {
-        println(s">>> STARTING: copyTestData function invoked")
         val lambdaClient: LambdaClient = LambdaClient.create()
 
         val copyTestDataRun =
-          lambdaClient.invoke(InvokeRequest.builder().functionName("addressLookupCopyTestDataLambdaFunction").payload(SdkBytes.fromUtf8String(testEpoch)).build())
+          lambdaClient.invoke(InvokeRequest.builder().functionName(testDataLambdaName).payload(SdkBytes.fromUtf8String(testEpoch)).build())
         val copyTestDataRunStatus = copyTestDataRun.statusCode()
         copyTestDataRunStatus shouldBe 200
       }
 
       "verify schema does not exist yet" in {
-        println(s">>> STARTING: verify schema does not exist yet")
 
         sql"""SELECT viewname, definition
              |FROM pg_views
@@ -72,19 +71,22 @@ class IngestSpec extends AsyncWordSpec with Matchers {
                                           .transact(xtor).unsafeToFuture()
                                           .collect {
                                             case Some(result) =>
-                                              println(s">>> result: $result")
                                               result._1 shouldBe "address_lookup"
                                               result._2 should not include (s"FROM ab${testEpoch}_")
                                           }
       }
 
       "run the ingest step function" in {
-        println(s">>> STARTING: run the ingest step function")
         val sfnClient: SfnClient = SfnClient.create()
+
+        val stepFunctionArn =
+          sfnClient.listStateMachines().stateMachines().asScala.find(_.name() == stepFunctionName)
+                   .map(_.stateMachineArn()).getOrElse("STEP_FUNCTION_NOT_FOUND")
+
         val startExecutionRequest =
           StartExecutionRequest
               .builder()
-              .stateMachineArn("arn:aws:states:eu-west-2:710491386758:stateMachine:addressLookupIngestStateMachine")
+              .stateMachineArn(stepFunctionArn)
               .input(s"$testEpoch")
               .build()
         val executeSfnResponse = sfnClient.startExecution(startExecutionRequest)
@@ -92,8 +94,7 @@ class IngestSpec extends AsyncWordSpec with Matchers {
 
         val executionRequest = DescribeExecutionRequest.builder().executionArn(executionArn).build()
         var describeStatusResponse = sfnClient.describeExecution(executionRequest)
-        while (describeStatusResponse.status() != ExecutionStatus.SUCCEEDED) {
-          println(s">>> Sleeping as response status ${describeStatusResponse.status()} was not ${ExecutionStatus.SUCCEEDED}")
+        while (describeStatusResponse.status() != ExecutionStatus.SUCCEEDED || describeStatusResponse.status() != ExecutionStatus.FAILED || describeStatusResponse.status() != ExecutionStatus.TIMED_OUT) {
           Thread.sleep(60000)
           describeStatusResponse = sfnClient.describeExecution(executionRequest)
         }
@@ -102,7 +103,6 @@ class IngestSpec extends AsyncWordSpec with Matchers {
       }
 
       "check address_lookup is setup correctly" in {
-        println(s">>> STARTING: check address_lookup is setup correctly")
         sql"""SELECT viewname, definition
              | FROM pg_views
              | WHERE viewname = 'address_lookup'
@@ -118,7 +118,6 @@ class IngestSpec extends AsyncWordSpec with Matchers {
       }
 
       "data in the view looks ok" in {
-        println(s">>> STARTING: data in the view looks ok")
         sql"""SELECT postcode
              | FROM address_lookup
              | WHERE postcode LIKE 'BT12 %'""".stripMargin
