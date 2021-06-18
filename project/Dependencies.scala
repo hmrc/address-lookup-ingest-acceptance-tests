@@ -8,8 +8,9 @@ object Dependencies {
     "software.amazon.awssdk" % "sfn" % awsSdkVersion,
     "software.amazon.awssdk" % "lambda" % awsSdkVersion,
     "me.lamouri" % "jcredstash" % "2.1.1",
-    "org.postgresql" % "postgresql" % "42.2.22",
-    "org.scalatest" %% "scalatest" % "3.2.0" % Test,
-    "com.vladsch.flexmark" % "flexmark-all" % "0.35.10" % Test
+    "org.tpolecat" %% "doobie-core" % "0.7.1",
+    "org.tpolecat" %% "doobie-postgres" % "0.7.1",
+    "org.scalatest" %% "scalatest" % "3.2.0",
+    "com.vladsch.flexmark" % "flexmark-all" % "0.35.10"
   )
 }
