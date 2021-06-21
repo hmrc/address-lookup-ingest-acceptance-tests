@@ -44,87 +44,84 @@ class IngestSpec extends AsyncWordSpec with Matchers {
     credStash.getSecret(credstashTableName, credential, context)
   }
 
-  "Data Ingest" should {
+  "Address lookup data ingest" when {
     val testDataLambdaName = "addressLookupCopyTestDataLambdaFunction"
-    val stepFunctionName   = "addressLookupIngestStateMachine"
+    val stepFunctionName = "addressLookupIngestStateMachine"
     val testEpoch = (Random.nextInt(9999) + 500).toString //Make sure that we dont have an actual epoch number
     val xtor: Aux[IO, Unit] = transactor
 
-    "setup test data" when {
-      "copyTestData function invoked" in {
-        val lambdaClient: LambdaClient = LambdaClient.create()
+    "the step function has not yet run" should {
+      val lambdaClient: LambdaClient = LambdaClient.create()
+      val copyTestDataRun =
+        lambdaClient.invoke(InvokeRequest.builder().functionName(testDataLambdaName).payload(SdkBytes.fromUtf8String(testEpoch)).build())
+      val copyTestDataRunStatus = copyTestDataRun.statusCode()
+      copyTestDataRunStatus shouldBe 200
 
-        val copyTestDataRun =
-          lambdaClient.invoke(InvokeRequest.builder().functionName(testDataLambdaName).payload(SdkBytes.fromUtf8String(testEpoch)).build())
-        val copyTestDataRunStatus = copyTestDataRun.statusCode()
-        copyTestDataRunStatus shouldBe 200
-      }
-
-      "verify schema does not exist yet" in {
-
+      "not contain the expected schema" in {
         sql"""SELECT viewname, definition
              |FROM pg_views
              |WHERE viewname = 'address_lookup'
              |AND schemaname = 'public'""".stripMargin
-                                          .query[(String, String)]
-                                          .option
-                                          .transact(xtor).unsafeToFuture()
-                                          .collect {
-                                            case Some(result) =>
-                                              result._1 shouldBe "address_lookup"
-                                              result._2 should not include (s"FROM ab${testEpoch}_")
-                                          }
+          .query[(String, String)]
+          .option
+          .transact(xtor).unsafeToFuture()
+          .collect {
+            case Some(result) =>
+              result._1 shouldBe "address_lookup"
+              result._2 should not include (s"FROM ab${testEpoch}_")
+          }
+      }
+    }
+
+    "step function execution has completed" should {
+      val sfnClient: SfnClient = SfnClient.create()
+      val stepFunctionArn =
+        sfnClient.listStateMachines().stateMachines().asScala.find(_.name() == stepFunctionName)
+          .map(_.stateMachineArn()).getOrElse("STEP_FUNCTION_NOT_FOUND")
+
+      val startExecutionRequest =
+        StartExecutionRequest
+          .builder()
+          .stateMachineArn(stepFunctionArn)
+          .input(s"$testEpoch")
+          .build()
+      val executeSfnResponse = sfnClient.startExecution(startExecutionRequest)
+      val executionArn = executeSfnResponse.executionArn()
+
+      val executionRequest = DescribeExecutionRequest.builder().executionArn(executionArn).build()
+      var describeStatusResponse = sfnClient.describeExecution(executionRequest)
+      while (describeStatusResponse.status() != ExecutionStatus.SUCCEEDED || describeStatusResponse.status() != ExecutionStatus.FAILED || describeStatusResponse.status() != ExecutionStatus.TIMED_OUT) {
+        Thread.sleep(60000)
+        describeStatusResponse = sfnClient.describeExecution(executionRequest)
       }
 
-      "run the ingest step function" in {
-        val sfnClient: SfnClient = SfnClient.create()
-
-        val stepFunctionArn =
-          sfnClient.listStateMachines().stateMachines().asScala.find(_.name() == stepFunctionName)
-                   .map(_.stateMachineArn()).getOrElse("STEP_FUNCTION_NOT_FOUND")
-
-        val startExecutionRequest =
-          StartExecutionRequest
-              .builder()
-              .stateMachineArn(stepFunctionArn)
-              .input(s"$testEpoch")
-              .build()
-        val executeSfnResponse = sfnClient.startExecution(startExecutionRequest)
-        val executionArn = executeSfnResponse.executionArn()
-
-        val executionRequest = DescribeExecutionRequest.builder().executionArn(executionArn).build()
-        var describeStatusResponse = sfnClient.describeExecution(executionRequest)
-        while (describeStatusResponse.status() != ExecutionStatus.SUCCEEDED || describeStatusResponse.status() != ExecutionStatus.FAILED || describeStatusResponse.status() != ExecutionStatus.TIMED_OUT) {
-          Thread.sleep(60000)
-          describeStatusResponse = sfnClient.describeExecution(executionRequest)
-        }
-
+      "complete succesfully" in {
         describeStatusResponse.status() shouldBe ExecutionStatus.SUCCEEDED
       }
 
-      "check address_lookup is setup correctly" in {
+      "switch the public view to the new schema" in {
         sql"""SELECT viewname, definition
              | FROM pg_views
              | WHERE viewname = 'address_lookup'
              | AND schemaname = 'public'""".stripMargin
-                                           .query[(String, String)]
-                                           .unique
-                                           .transact(xtor).unsafeToFuture()
-                                           .map {
-                                             case result =>
-                                               result._1 shouldBe "address_lookup"
-                                               result._2 should include(s"FROM ab${testEpoch}_")
-                                           }
+          .query[(String, String)]
+          .unique
+          .transact(xtor).unsafeToFuture()
+          .map {
+            case result =>
+              result._1 shouldBe "address_lookup"
+              result._2 should include(s"FROM ab${testEpoch}_")
+          }
       }
 
-      "data in the view looks ok" in {
+      "return data as expected" in {
         sql"""SELECT postcode
              | FROM address_lookup
              | WHERE postcode LIKE 'BT12 %'""".stripMargin
-                                              .query[String]
-                                              .to[List]
-                                              .transact(xtor).unsafeToFuture()
-                                              .map(result => result should not be empty)
+          .query[String]
+          .to[List]
+          .transact(xtor).unsafeToFuture()
+          .map(result => result should not be empty)
       }
     }
   }
