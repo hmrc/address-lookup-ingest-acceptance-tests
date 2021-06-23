@@ -17,11 +17,7 @@ pipeline {
     stage('Run acceptance tests') {
       steps {
         ansiColor('xterm') {
-          sh(script: """set +x
-                        |export ROLE_ARN=arn:aws:iam::${account_ids["integration"]}:role/${assume_roles["integration"]}
-                        |export AWS_DEFAULT_REGION=eu-west-2
-                        |set -x
-                        |sbt test""".stripMargin())
+          sh(script: """ROLE_ARN=arn:aws:iam::${account_ids["integration"]}:role/${assume_roles["integration"]} AWS_DEFAULT_REGION=eu-west-2 sbt test""")
         }
       }
     }
