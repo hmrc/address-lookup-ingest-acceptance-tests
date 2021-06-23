@@ -19,7 +19,7 @@ package uk.gov.hmrc.specs
 import me.lamouri.JCredStash
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
-import software.amazon.awssdk.auth.credentials.{AwsBasicCredentials, AwsCredentials, AwsSessionCredentials, StaticCredentialsProvider}
+import software.amazon.awssdk.auth.credentials.{AwsSessionCredentials, StaticCredentialsProvider}
 import software.amazon.awssdk.core.SdkBytes
 import software.amazon.awssdk.services.lambda.LambdaClient
 import software.amazon.awssdk.services.lambda.model.InvokeRequest
@@ -154,9 +154,10 @@ class IngestSpec extends AsyncWordSpec with Matchers {
     val stsClient: StsClient = StsClient.create()
     val assumeRoleRequest: AssumeRoleRequest = AssumeRoleRequest.builder()
       .roleArn(roleArn)
+      .roleSessionName("address-lookup-ingest-acceptance-tests")
       .build()
 
-    val creds: Credentials = stsClient.assumeRole(assumeRoleRequest).credentials();
+    val creds: Credentials = stsClient.assumeRole(assumeRoleRequest).credentials()
     val session = AwsSessionCredentials.create(creds.accessKeyId(), creds.secretAccessKey(), creds.sessionToken())
 
     LambdaClient.builder()
