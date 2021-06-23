@@ -16,6 +16,7 @@
 
 package uk.gov.hmrc.specs
 
+import com.amazonaws.auth.{AWSStaticCredentialsProvider, BasicSessionCredentials}
 import me.lamouri.JCredStash
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
@@ -36,14 +37,34 @@ class IngestSpec extends AsyncWordSpec with Matchers {
   private val context: java.util.Map[String, String] =
     Map("role" -> "address_lookup_file_download").asJava
 
-  val roleArn: Option[String] = Option(System.getenv("ROLE_ARN"))
-  val (lambdaClient, sfnClient) = roleArn match {
-    case Some(arn) => createClientWithAssumeRole(arn)
-    case _ => LambdaClient.create() -> SfnClient.create()
+  val assumeRoleCreds: Option[Credentials] = Option(System.getenv("ROLE_ARN"))
+    .map(roleArn => {
+      val stsClient: StsClient = StsClient.create()
+
+      val assumeRoleRequest: AssumeRoleRequest = AssumeRoleRequest.builder()
+        .roleArn(roleArn)
+        .roleSessionName("address-lookup-ingest-acceptance-tests")
+        .build()
+
+      stsClient.assumeRole(assumeRoleRequest).credentials()
+    })
+
+  val credStash: JCredStash = assumeRoleCreds match {
+    case Some(creds) => createCredStashClientWithCreds(creds)
+    case _ => new JCredStash()
+  }
+
+  val lambdaClient: LambdaClient = assumeRoleCreds match {
+    case Some(creds) => createLambdaClientWithCreds(creds)
+    case _ => LambdaClient.create()
+  }
+
+  val sfnClient: SfnClient = assumeRoleCreds match {
+    case Some(creds) => createStepFunctionClientWithCreds(creds)
+    case _ => SfnClient.create()
   }
 
   private def retrieveCredentials(credential: String) = {
-    val credStash = new JCredStash()
     credStash.getSecret(credstashTableName, credential, context)
   }
 
@@ -79,7 +100,7 @@ class IngestSpec extends AsyncWordSpec with Matchers {
     }
 
     "step function execution has completed" should {
-      val stepFunctionArn =
+       val stepFunctionArn =
         sfnClient.listStateMachines().stateMachines().asScala.find(_.name() == stepFunctionName)
           .map(_.stateMachineArn()).getOrElse("STEP_FUNCTION_NOT_FOUND")
 
@@ -149,17 +170,25 @@ class IngestSpec extends AsyncWordSpec with Matchers {
   //    )
   //  }
 
-  private def createClientWithAssumeRole(roleArn: String) = {
-    val stsClient: StsClient = StsClient.create()
-    val assumeRoleRequest: AssumeRoleRequest = AssumeRoleRequest.builder()
-      .roleArn(roleArn)
-      .roleSessionName("address-lookup-ingest-acceptance-tests")
-      .build()
+  private def createCredStashClientWithCreds(creds: Credentials) = {
+    val provider = new AWSStaticCredentialsProvider(
+      new BasicSessionCredentials(creds.accessKeyId(), creds.secretAccessKey(), creds.sessionToken()))
+    new JCredStash(provider)
+  }
 
-    val creds: Credentials = stsClient.assumeRole(assumeRoleRequest).credentials()
+  private def createLambdaClientWithCreds(creds: Credentials) = {
     val session = AwsSessionCredentials.create(creds.accessKeyId(), creds.secretAccessKey(), creds.sessionToken())
 
-    (LambdaClient.builder().credentialsProvider(StaticCredentialsProvider.create(session)).build(),
-        SfnClient.builder().credentialsProvider(StaticCredentialsProvider.create(session)).build())
+    LambdaClient.builder()
+      .credentialsProvider(StaticCredentialsProvider.create(session))
+      .build()
+  }
+
+  private def createStepFunctionClientWithCreds(creds: Credentials) = {
+    val session = AwsSessionCredentials.create(creds.accessKeyId(), creds.secretAccessKey(), creds.sessionToken())
+
+    SfnClient.builder()
+      .credentialsProvider(StaticCredentialsProvider.create(session))
+      .build()
   }
 }
