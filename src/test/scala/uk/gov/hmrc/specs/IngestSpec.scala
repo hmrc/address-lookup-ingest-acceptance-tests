@@ -16,28 +16,31 @@
 
 package uk.gov.hmrc.specs
 
-import cats.effect.{ContextShift, IO}
-import doobie.Transactor
-import doobie.implicits._
-import doobie.util.transactor.Transactor.Aux
 import me.lamouri.JCredStash
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
+import software.amazon.awssdk.auth.credentials.{AwsBasicCredentials, AwsCredentials, AwsSessionCredentials, StaticCredentialsProvider}
 import software.amazon.awssdk.core.SdkBytes
 import software.amazon.awssdk.services.lambda.LambdaClient
 import software.amazon.awssdk.services.lambda.model.InvokeRequest
 import software.amazon.awssdk.services.sfn.SfnClient
 import software.amazon.awssdk.services.sfn.model.{DescribeExecutionRequest, ExecutionStatus, StartExecutionRequest}
+import software.amazon.awssdk.services.sts.StsClient
+import software.amazon.awssdk.services.sts.model.{AssumeRoleRequest, Credentials}
 
 import scala.collection.JavaConverters._
-import scala.concurrent.ExecutionContext
 import scala.util.Random
 
 class IngestSpec extends AsyncWordSpec with Matchers {
-
   private val credstashTableName = "credential-store"
   private val context: java.util.Map[String, String] =
     Map("role" -> "address_lookup_file_download").asJava
+
+  val roleArn: Option[String] = Option(System.getenv("ROLE_ARN"))
+  val lambdaClient: LambdaClient = roleArn match {
+    case Some(arn) => createClientWithAssumeRole(arn)
+    case _ => LambdaClient.create()
+  }
 
   private def retrieveCredentials(credential: String) = {
     val credStash = new JCredStash()
@@ -48,10 +51,9 @@ class IngestSpec extends AsyncWordSpec with Matchers {
     val testDataLambdaName = "addressLookupCopyTestDataLambdaFunction"
     val stepFunctionName = "addressLookupIngestStateMachine"
     val testEpoch = (Random.nextInt(9999) + 500).toString //Make sure that we dont have an actual epoch number
-//    val xtor: Aux[IO, Unit] = transactor
+    //    val xtor: Aux[IO, Unit] = transactor
 
     "the step function has not yet run" should {
-      val lambdaClient: LambdaClient = LambdaClient.create()
       val copyTestDataRun =
         lambdaClient.invoke(InvokeRequest.builder().functionName(testDataLambdaName).payload(SdkBytes.fromUtf8String(testEpoch)).build())
       val copyTestDataRunStatus = copyTestDataRun.statusCode()
@@ -60,20 +62,20 @@ class IngestSpec extends AsyncWordSpec with Matchers {
       "pass" in {
         true shouldBe true
       }
-//      "not contain the expected schema" in {
-//        sql"""SELECT viewname, definition
-//             |FROM pg_views
-//             |WHERE viewname = 'address_lookup'
-//             |AND schemaname = 'public'""".stripMargin
-//          .query[(String, String)]
-//          .option
-//          .transact(xtor).unsafeToFuture()
-//          .collect {
-//            case Some(result) =>
-//              result._1 shouldBe "address_lookup"
-//              result._2 should not include (s"FROM ab${testEpoch}_")
-//          }
-//      }
+      //      "not contain the expected schema" in {
+      //        sql"""SELECT viewname, definition
+      //             |FROM pg_views
+      //             |WHERE viewname = 'address_lookup'
+      //             |AND schemaname = 'public'""".stripMargin
+      //          .query[(String, String)]
+      //          .option
+      //          .transact(xtor).unsafeToFuture()
+      //          .collect {
+      //            case Some(result) =>
+      //              result._1 shouldBe "address_lookup"
+      //              result._2 should not include (s"FROM ab${testEpoch}_")
+      //          }
+      //      }
     }
 
     "step function execution has completed" should {
@@ -102,49 +104,63 @@ class IngestSpec extends AsyncWordSpec with Matchers {
         describeStatusResponse.status() shouldBe ExecutionStatus.SUCCEEDED
       }
 
-//      "switch the public view to the new schema" in {
-//        sql"""SELECT viewname, definition
-//             | FROM pg_views
-//             | WHERE viewname = 'address_lookup'
-//             | AND schemaname = 'public'""".stripMargin
-//          .query[(String, String)]
-//          .unique
-//          .transact(xtor).unsafeToFuture()
-//          .map {
-//            case result =>
-//              result._1 shouldBe "address_lookup"
-//              result._2 should include(s"FROM ab${testEpoch}_")
-//          }
-//      }
+      //      "switch the public view to the new schema" in {
+      //        sql"""SELECT viewname, definition
+      //             | FROM pg_views
+      //             | WHERE viewname = 'address_lookup'
+      //             | AND schemaname = 'public'""".stripMargin
+      //          .query[(String, String)]
+      //          .unique
+      //          .transact(xtor).unsafeToFuture()
+      //          .map {
+      //            case result =>
+      //              result._1 shouldBe "address_lookup"
+      //              result._2 should include(s"FROM ab${testEpoch}_")
+      //          }
+      //      }
 
-//      "return data as expected" in {
-//        sql"""SELECT postcode
-//             | FROM address_lookup
-//             | WHERE postcode LIKE 'BT12 %'""".stripMargin
-//          .query[String]
-//          .to[List]
-//          .transact(xtor).unsafeToFuture()
-//          .map(result => result should not be empty)
-//      }
+      //      "return data as expected" in {
+      //        sql"""SELECT postcode
+      //             | FROM address_lookup
+      //             | WHERE postcode LIKE 'BT12 %'""".stripMargin
+      //          .query[String]
+      //          .to[List]
+      //          .transact(xtor).unsafeToFuture()
+      //          .map(result => result should not be empty)
+      //      }
     }
   }
 
-//  private def transactor = {
-//    val host: String = retrieveCredentials("address_lookup_rds_host")
-//    val port: String = "5432"
-//    val database: String = retrieveCredentials("address_lookup_rds_database")
-//    val admin: String = retrieveCredentials("address_lookup_rds_readonly_user")
-//    val adminPassword: String = retrieveCredentials("address_lookup_rds_readonly_password")
-//
-//    implicit val cs: ContextShift[IO] =
-//      IO.contextShift(implicitly[ExecutionContext])
-//
-//    val dbUrl = s"jdbc:postgresql://$host:$port/$database?searchpath=public"
-//    Transactor.fromDriverManager[IO](
-//      "org.postgresql.Driver",
-//      dbUrl,
-//      admin,
-//      adminPassword
-//    )
-//  }
+  //  private def transactor = {
+  //    val host: String = retrieveCredentials("address_lookup_rds_host")
+  //    val port: String = "5432"
+  //    val database: String = retrieveCredentials("address_lookup_rds_database")
+  //    val admin: String = retrieveCredentials("address_lookup_rds_readonly_user")
+  //    val adminPassword: String = retrieveCredentials("address_lookup_rds_readonly_password")
+  //
+  //    implicit val cs: ContextShift[IO] =
+  //      IO.contextShift(implicitly[ExecutionContext])
+  //
+  //    val dbUrl = s"jdbc:postgresql://$host:$port/$database?searchpath=public"
+  //    Transactor.fromDriverManager[IO](
+  //      "org.postgresql.Driver",
+  //      dbUrl,
+  //      admin,
+  //      adminPassword
+  //    )
+  //  }
+
+  private def createClientWithAssumeRole(roleArn: String) = {
+    val stsClient: StsClient = StsClient.create()
+    val assumeRoleRequest: AssumeRoleRequest = AssumeRoleRequest.builder()
+      .roleArn(roleArn)
+      .build()
+
+    val creds: Credentials = stsClient.assumeRole(assumeRoleRequest).credentials();
+    val session = AwsSessionCredentials.create(creds.accessKeyId(), creds.secretAccessKey(), creds.sessionToken())
+
+    LambdaClient.builder()
+      .credentialsProvider(StaticCredentialsProvider.create(session))
+      .build()
+  }
 }
