@@ -26,6 +26,7 @@ import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 import software.amazon.awssdk.auth.credentials.{AwsSessionCredentials, StaticCredentialsProvider}
 import software.amazon.awssdk.core.SdkBytes
+import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.lambda.LambdaClient
 import software.amazon.awssdk.services.lambda.model.InvokeRequest
 import software.amazon.awssdk.services.sfn.SfnClient
@@ -44,7 +45,7 @@ class IngestSpec extends AsyncWordSpec with Matchers {
 
   val assumeRoleCreds: Option[Credentials] = Option(System.getenv("ROLE_ARN"))
     .map(roleArn => {
-      val stsClient: StsClient = StsClient.create()
+      val stsClient: StsClient = StsClient.builder().region(Region.EU_WEST_2).build()
 
       val assumeRoleRequest: AssumeRoleRequest = AssumeRoleRequest.builder()
         .roleArn(roleArn)
