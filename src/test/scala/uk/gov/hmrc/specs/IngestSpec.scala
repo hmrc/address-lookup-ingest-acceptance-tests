@@ -57,6 +57,9 @@ class IngestSpec extends AsyncWordSpec with Matchers {
       val copyTestDataRunStatus = copyTestDataRun.statusCode()
       copyTestDataRunStatus shouldBe 200
 
+      "pass" in {
+        true shouldBe true
+      }
 //      "not contain the expected schema" in {
 //        sql"""SELECT viewname, definition
 //             |FROM pg_views
