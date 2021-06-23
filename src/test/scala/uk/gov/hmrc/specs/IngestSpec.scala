@@ -37,9 +37,9 @@ class IngestSpec extends AsyncWordSpec with Matchers {
     Map("role" -> "address_lookup_file_download").asJava
 
   val roleArn: Option[String] = Option(System.getenv("ROLE_ARN"))
-  val lambdaClient: LambdaClient = roleArn match {
+  val (lambdaClient, sfnClient) = roleArn match {
     case Some(arn) => createClientWithAssumeRole(arn)
-    case _ => LambdaClient.create()
+    case _ => LambdaClient.create() -> SfnClient.create()
   }
 
   private def retrieveCredentials(credential: String) = {
@@ -79,7 +79,6 @@ class IngestSpec extends AsyncWordSpec with Matchers {
     }
 
     "step function execution has completed" should {
-      val sfnClient: SfnClient = SfnClient.create()
       val stepFunctionArn =
         sfnClient.listStateMachines().stateMachines().asScala.find(_.name() == stepFunctionName)
           .map(_.stateMachineArn()).getOrElse("STEP_FUNCTION_NOT_FOUND")
@@ -160,8 +159,7 @@ class IngestSpec extends AsyncWordSpec with Matchers {
     val creds: Credentials = stsClient.assumeRole(assumeRoleRequest).credentials()
     val session = AwsSessionCredentials.create(creds.accessKeyId(), creds.secretAccessKey(), creds.sessionToken())
 
-    LambdaClient.builder()
-      .credentialsProvider(StaticCredentialsProvider.create(session))
-      .build()
+    (LambdaClient.builder().credentialsProvider(StaticCredentialsProvider.create(session)).build(),
+        SfnClient.builder().credentialsProvider(StaticCredentialsProvider.create(session)).build())
   }
 }
