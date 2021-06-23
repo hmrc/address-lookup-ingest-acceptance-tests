@@ -24,10 +24,7 @@ pipeline {
     stage('Run acceptance tests') {
       steps {
         ansiColor('xterm') {
-          def account_id = account_ids["integration"]
-          def role = assume_roles["integration"]
-
-          sh(script: """${generateAWSCredentials(account_id, role)}
+          sh(script: """${generateAWSCredentials(account_ids["integration"], assume_roles["integration"])}
                      sbt test""")
         }
       }
