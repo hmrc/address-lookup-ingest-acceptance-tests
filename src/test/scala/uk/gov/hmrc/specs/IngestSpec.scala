@@ -56,17 +56,17 @@ class IngestSpec extends AnyWordSpec with Matchers {
         stsClient.assumeRole(assumeRoleRequest).credentials()
       }
 
-  private val credStash: JCredStash = assumeRoleCreds match {
+  private def credStash: JCredStash = assumeRoleCreds match {
     case Some(creds) => createCredStashClientWithCreds(creds)
     case _           => new JCredStash()
   }
 
-  private val lambdaClient: LambdaClient = assumeRoleCreds match {
+  private def lambdaClient: LambdaClient = assumeRoleCreds match {
     case Some(creds) => createLambdaClientWithCreds(creds)
     case _           => LambdaClient.create()
   }
 
-  private val sfnClient: SfnClient = assumeRoleCreds match {
+  private def sfnClient: SfnClient = assumeRoleCreds match {
     case Some(creds) => createStepFunctionClientWithCreds(creds)
     case _           => SfnClient.create()
   }
@@ -97,52 +97,49 @@ class IngestSpec extends AnyWordSpec with Matchers {
              .build()
   }
 
-  println(s">>> testEpoch: $testEpoch")
-
   "Address lookup data ingest" when {
     "the address_lookup view ddl" should {
       "not contain the expected schema" in {
         val checkTestDataRun = lambdaClient.invoke(InvokeRequest.builder().functionName(checkTestDataLambdaName).payload(SdkBytes.fromUtf8String(testEpoch)).build())
-        checkTestDataRun.statusCode() shouldBe 200
         val response = checkTestDataRun.payload().asString(Charset.forName("utf-8"))
-        println(s">>> checkTestDataRunResponse: $response")
-        response should not include(s""""schemaName":"ab${testEpoch}""")
+
+        checkTestDataRun.statusCode() shouldBe 200
+        response should include(s""""schemaName":"NOT_FOUND"""")
       }
     }
 
     "the step function has not yet run" should {
-      val copyTestDataRun =
-        lambdaClient.invoke(InvokeRequest.builder().functionName(copyTestDataLambdaName).payload(SdkBytes.fromUtf8String(testEpoch)).build())
-      val copyTestDataRunStatus = copyTestDataRun.statusCode()
-
       "copy test data should run successfully" in {
+        val copyTestDataRun =
+          lambdaClient.invoke(InvokeRequest.builder().functionName(copyTestDataLambdaName).payload(SdkBytes.fromUtf8String(testEpoch)).build())
+        val copyTestDataRunStatus = copyTestDataRun.statusCode()
+
         copyTestDataRunStatus shouldBe 200
       }
     }
 
     "step function execution has completed" should {
-      val stepFunctionArn =
-        sfnClient.listStateMachines().stateMachines().asScala.find(_.name() == stepFunctionName)
-                 .map(_.stateMachineArn()).getOrElse("STEP_FUNCTION_NOT_FOUND")
-
-      val startExecutionRequest =
-        StartExecutionRequest
-            .builder()
-            .stateMachineArn(stepFunctionArn)
-            .input(s"$testEpoch")
-            .build()
-      val executeSfnResponse = sfnClient.startExecution(startExecutionRequest)
-      val executionArn = executeSfnResponse.executionArn()
-
-      val executionRequest = DescribeExecutionRequest.builder().executionArn(executionArn).build()
-      var describeStatusResponse = sfnClient.describeExecution(executionRequest)
-      while (describeStatusResponse.status() != ExecutionStatus.SUCCEEDED && describeStatusResponse.status() != ExecutionStatus.FAILED && describeStatusResponse.status() != ExecutionStatus.TIMED_OUT) {
-        println(s">>> describeStatusResponse: $describeStatusResponse")
-        Thread.sleep(60000)
-        describeStatusResponse = sfnClient.describeExecution(executionRequest)
-      }
-
       "complete succesfully" in {
+        val stepFunctionArn =
+          sfnClient.listStateMachines().stateMachines().asScala.find(_.name() == stepFunctionName)
+                   .map(_.stateMachineArn()).getOrElse("STEP_FUNCTION_NOT_FOUND")
+
+        val startExecutionRequest =
+          StartExecutionRequest
+              .builder()
+              .stateMachineArn(stepFunctionArn)
+              .input(s"$testEpoch")
+              .build()
+        val executeSfnResponse = sfnClient.startExecution(startExecutionRequest)
+        val executionArn = executeSfnResponse.executionArn()
+
+        val executionRequest = DescribeExecutionRequest.builder().executionArn(executionArn).build()
+        var describeStatusResponse = sfnClient.describeExecution(executionRequest)
+        while (describeStatusResponse.status() != ExecutionStatus.SUCCEEDED && describeStatusResponse.status() != ExecutionStatus.FAILED && describeStatusResponse.status() != ExecutionStatus.TIMED_OUT) {
+          Thread.sleep(60000)
+          describeStatusResponse = sfnClient.describeExecution(executionRequest)
+        }
+
         describeStatusResponse.status() shouldBe ExecutionStatus.SUCCEEDED
       }
     }
@@ -151,9 +148,9 @@ class IngestSpec extends AnyWordSpec with Matchers {
       "return data as expected" in {
         val checkTestDataRun = lambdaClient.invoke(InvokeRequest.builder().functionName(checkTestDataLambdaName).payload(SdkBytes.fromUtf8String(testEpoch)).build())
         val response = checkTestDataRun.payload().asString(Charset.forName("utf-8"))
-        println(s">>> checkTestDataRun: status: ${checkTestDataRun.statusCode()}, responce: $response")
+
         checkTestDataRun.statusCode() shouldBe 200
-        response should include (s""""schemaName":"ab${testEpoch}""")
+        response should include(s""""schemaName":"ab${testEpoch}""")
       }
     }
   }
