@@ -35,26 +35,27 @@ import scala.collection.JavaConverters._
 import scala.util.Random
 
 class IngestSpec extends AnyWordSpec with Matchers {
-  val copyTestDataLambdaName = "addressLookupCopyTestDataLambdaFunction"
+  val copyTestDataLambdaName  = "addressLookupCopyTestDataLambdaFunction"
   val checkTestDataLambdaName = "addressLookupCheckTestDataLambdaFunction"
-  val stepFunctionName = "addressLookupIngestStateMachine"
-  val testEpoch = (Random.nextInt(9999) + 500).toString //Make sure that we dont have an actual epoch number
+  val stepFunctionName        = "addressLookupIngestStateMachine"
+  val testEpoch               = (Random.nextInt(9999) + 500).toString //Make sure that we dont have an actual epoch number
 
-  private val credstashTableName = "credential-store"
+  private val credstashTableName                     = "credential-store"
   private val context: java.util.Map[String, String] = Map("role" -> "address_lookup_file_download").asJava
 
   private val assumeRoleCreds: Option[Credentials] = Option(System.getenv("ROLE_ARN"))
-      .map { roleArn =>
-        val stsClient: StsClient = StsClient.builder().region(Region.EU_WEST_2).build()
+    .map { roleArn =>
+      val stsClient: StsClient = StsClient.builder().region(Region.EU_WEST_2).build()
 
-        val assumeRoleRequest: AssumeRoleRequest =
-          AssumeRoleRequest.builder()
-                           .roleArn(roleArn)
-                           .roleSessionName("address-lookup-ingest-acceptance-tests")
-                           .build()
+      val assumeRoleRequest: AssumeRoleRequest =
+        AssumeRoleRequest
+          .builder()
+          .roleArn(roleArn)
+          .roleSessionName("address-lookup-ingest-acceptance-tests")
+          .build()
 
-        stsClient.assumeRole(assumeRoleRequest).credentials()
-      }
+      stsClient.assumeRole(assumeRoleRequest).credentials()
+    }
 
   private def credStash: JCredStash = assumeRoleCreds match {
     case Some(creds) => createCredStashClientWithCreds(creds)
@@ -71,47 +72,61 @@ class IngestSpec extends AnyWordSpec with Matchers {
     case _           => SfnClient.create()
   }
 
-  private def retrieveCredentials(credential: String) = {
+  private def retrieveCredentials(credential: String) =
     credStash.getSecret(credstashTableName, credential, context)
-  }
 
   private def createCredStashClientWithCreds(creds: Credentials) = {
     val provider = new AWSStaticCredentialsProvider(
-      new BasicSessionCredentials(creds.accessKeyId(), creds.secretAccessKey(), creds.sessionToken()))
+      new BasicSessionCredentials(creds.accessKeyId(), creds.secretAccessKey(), creds.sessionToken())
+    )
     new JCredStash(provider)
   }
 
   private def createLambdaClientWithCreds(creds: Credentials) = {
     val session = AwsSessionCredentials.create(creds.accessKeyId(), creds.secretAccessKey(), creds.sessionToken())
 
-    LambdaClient.builder()
-                .credentialsProvider(StaticCredentialsProvider.create(session))
-                .build()
+    LambdaClient
+      .builder()
+      .credentialsProvider(StaticCredentialsProvider.create(session))
+      .build()
   }
 
   private def createStepFunctionClientWithCreds(creds: Credentials) = {
     val session = AwsSessionCredentials.create(creds.accessKeyId(), creds.secretAccessKey(), creds.sessionToken())
 
-    SfnClient.builder()
-             .credentialsProvider(StaticCredentialsProvider.create(session))
-             .build()
+    SfnClient
+      .builder()
+      .credentialsProvider(StaticCredentialsProvider.create(session))
+      .build()
   }
 
   "Address lookup data ingest" when {
     "the address_lookup view ddl" should {
       "not contain the expected schema" in {
-        val checkTestDataRun = lambdaClient.invoke(InvokeRequest.builder().functionName(checkTestDataLambdaName).payload(SdkBytes.fromUtf8String(testEpoch)).build())
-        val response = checkTestDataRun.payload().asString(Charset.forName("utf-8"))
+        val checkTestDataRun = lambdaClient.invoke(
+          InvokeRequest
+            .builder()
+            .functionName(checkTestDataLambdaName)
+            .payload(SdkBytes.fromUtf8String(testEpoch))
+            .build()
+        )
+        val response         = checkTestDataRun.payload().asString(Charset.forName("utf-8"))
 
         checkTestDataRun.statusCode() shouldBe 200
-        response should include(s""""schemaName":"NOT_FOUND"""")
+        response                        should include(s""""schemaName":"NOT_FOUND"""")
       }
     }
 
     "the step function has not yet run" should {
       "copy test data should run successfully" in {
-        val copyTestDataRun =
-          lambdaClient.invoke(InvokeRequest.builder().functionName(copyTestDataLambdaName).payload(SdkBytes.fromUtf8String(testEpoch)).build())
+        val copyTestDataRun       =
+          lambdaClient.invoke(
+            InvokeRequest
+              .builder()
+              .functionName(copyTestDataLambdaName)
+              .payload(SdkBytes.fromUtf8String(testEpoch))
+              .build()
+          )
         val copyTestDataRunStatus = copyTestDataRun.statusCode()
 
         copyTestDataRunStatus shouldBe 200
@@ -121,21 +136,29 @@ class IngestSpec extends AnyWordSpec with Matchers {
     "step function execution has completed" should {
       "complete succesfully" in {
         val stepFunctionArn =
-          sfnClient.listStateMachines().stateMachines().asScala.find(_.name() == stepFunctionName)
-                   .map(_.stateMachineArn()).getOrElse("STEP_FUNCTION_NOT_FOUND")
+          sfnClient
+            .listStateMachines()
+            .stateMachines()
+            .asScala
+            .find(_.name() == stepFunctionName)
+            .map(_.stateMachineArn())
+            .getOrElse("STEP_FUNCTION_NOT_FOUND")
 
         val startExecutionRequest =
           StartExecutionRequest
-              .builder()
-              .stateMachineArn(stepFunctionArn)
-              .input(s"$testEpoch")
-              .build()
-        val executeSfnResponse = sfnClient.startExecution(startExecutionRequest)
-        val executionArn = executeSfnResponse.executionArn()
+            .builder()
+            .stateMachineArn(stepFunctionArn)
+            .input(s"""{"epoch": "$testEpoch"}""")
+            .build()
+        val executeSfnResponse    = sfnClient.startExecution(startExecutionRequest)
+        val executionArn          = executeSfnResponse.executionArn()
 
-        val executionRequest = DescribeExecutionRequest.builder().executionArn(executionArn).build()
+        val executionRequest       = DescribeExecutionRequest.builder().executionArn(executionArn).build()
         var describeStatusResponse = sfnClient.describeExecution(executionRequest)
-        while (describeStatusResponse.status() != ExecutionStatus.SUCCEEDED && describeStatusResponse.status() != ExecutionStatus.FAILED && describeStatusResponse.status() != ExecutionStatus.TIMED_OUT) {
+        while (
+          describeStatusResponse.status() != ExecutionStatus.SUCCEEDED && describeStatusResponse
+            .status() != ExecutionStatus.FAILED && describeStatusResponse.status() != ExecutionStatus.TIMED_OUT
+        ) {
           Thread.sleep(60000)
           describeStatusResponse = sfnClient.describeExecution(executionRequest)
         }
@@ -146,11 +169,17 @@ class IngestSpec extends AnyWordSpec with Matchers {
 
     "checking for data" should {
       "return data as expected" in {
-        val checkTestDataRun = lambdaClient.invoke(InvokeRequest.builder().functionName(checkTestDataLambdaName).payload(SdkBytes.fromUtf8String(testEpoch)).build())
-        val response = checkTestDataRun.payload().asString(Charset.forName("utf-8"))
+        val checkTestDataRun = lambdaClient.invoke(
+          InvokeRequest
+            .builder()
+            .functionName(checkTestDataLambdaName)
+            .payload(SdkBytes.fromUtf8String(testEpoch))
+            .build()
+        )
+        val response         = checkTestDataRun.payload().asString(Charset.forName("utf-8"))
 
         checkTestDataRun.statusCode() shouldBe 200
-        response should include(s""""schemaName":"ab${testEpoch}""")
+        response                        should include(s""""schemaName":"ab$testEpoch""")
       }
     }
   }
