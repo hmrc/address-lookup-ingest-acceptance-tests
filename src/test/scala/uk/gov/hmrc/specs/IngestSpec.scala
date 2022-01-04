@@ -16,8 +16,6 @@
 
 package uk.gov.hmrc.specs
 
-import com.amazonaws.auth.{AWSStaticCredentialsProvider, BasicSessionCredentials}
-import me.lamouri.JCredStash
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 import software.amazon.awssdk.auth.credentials.{AwsSessionCredentials, StaticCredentialsProvider}
@@ -57,11 +55,6 @@ class IngestSpec extends AnyWordSpec with Matchers {
       stsClient.assumeRole(assumeRoleRequest).credentials()
     }
 
-  private def credStash: JCredStash = assumeRoleCreds match {
-    case Some(creds) => createCredStashClientWithCreds(creds)
-    case _           => new JCredStash()
-  }
-
   private def lambdaClient: LambdaClient = assumeRoleCreds match {
     case Some(creds) => createLambdaClientWithCreds(creds)
     case _           => LambdaClient.create()
@@ -70,16 +63,6 @@ class IngestSpec extends AnyWordSpec with Matchers {
   private def sfnClient: SfnClient = assumeRoleCreds match {
     case Some(creds) => createStepFunctionClientWithCreds(creds)
     case _           => SfnClient.create()
-  }
-
-  private def retrieveCredentials(credential: String) =
-    credStash.getSecret(credstashTableName, credential, context)
-
-  private def createCredStashClientWithCreds(creds: Credentials) = {
-    val provider = new AWSStaticCredentialsProvider(
-      new BasicSessionCredentials(creds.accessKeyId(), creds.secretAccessKey(), creds.sessionToken())
-    )
-    new JCredStash(provider)
   }
 
   private def createLambdaClientWithCreds(creds: Credentials) = {
