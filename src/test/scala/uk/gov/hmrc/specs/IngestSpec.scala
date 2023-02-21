@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 HM Revenue & Customs
+ * Copyright 2023 HM Revenue & Customs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,9 +37,6 @@ class IngestSpec extends AnyWordSpec with Matchers {
   val checkTestDataLambdaName = "addressLookupCheckTestDataLambdaFunction"
   val stepFunctionName        = "addressLookupIngestStateMachine"
   val testEpoch               = (Random.nextInt(9999) + 500).toString //Make sure that we dont have an actual epoch number
-
-  private val credstashTableName                     = "credential-store"
-  private val context: java.util.Map[String, String] = Map("role" -> "address_lookup_file_download").asJava
 
   private val assumeRoleCreds: Option[Credentials] = Option(System.getenv("ROLE_ARN"))
     .map { roleArn =>
