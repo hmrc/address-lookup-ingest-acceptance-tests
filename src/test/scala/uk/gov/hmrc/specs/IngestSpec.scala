@@ -33,9 +33,9 @@ import scala.collection.JavaConverters._
 import scala.util.Random
 
 class IngestSpec extends AnyWordSpec with Matchers {
-  val copyTestDataLambdaName  = "addressLookupCopyTestDataLambdaFunction"
-  val checkTestDataLambdaName = "addressLookupCheckTestDataLambdaFunction"
-  val stepFunctionName        = "addressLookupIngestStateMachine"
+  val copyTestDataLambdaName  = "cipAddressLookupCopyTestDataLambdaFunction"
+  val checkTestDataLambdaName = "cipAddressLookupCheckTestDataLambdaFunction"
+  val stepFunctionName        = "cipAddressLookupIngestStateMachine"
   val testEpoch               = (Random.nextInt(9999) + 500).toString //Make sure that we dont have an actual epoch number
 
   private val assumeRoleCreds: Option[Credentials] = Option(System.getenv("ROLE_ARN"))
