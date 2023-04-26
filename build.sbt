@@ -16,6 +16,6 @@ lazy val testSuite = (project in file("."))
       "org.tpolecat"          %% "doobie-core"     % "0.13.4",
       "org.tpolecat"          %% "doobie-postgres" % "0.13.4",
       "org.scalatest"         %% "scalatest"       % "3.2.12",
-      "com.vladsch.flexmark"   % "flexmark-all"    % "0.64.0"
+      "com.vladsch.flexmark"   % "flexmark-all"    % "0.34.60"
     )
   )
