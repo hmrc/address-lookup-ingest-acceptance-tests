@@ -29,7 +29,7 @@ import software.amazon.awssdk.services.sts.StsClient
 import software.amazon.awssdk.services.sts.model.{AssumeRoleRequest, Credentials}
 
 import java.nio.charset.Charset
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import scala.util.Random
 
 class IngestSpec extends AnyWordSpec with Matchers {
