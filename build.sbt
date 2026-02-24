@@ -6,7 +6,7 @@ lazy val testSuite = (project in file("."))
   .settings(
     name := "address-lookup-ingest-acceptance-tests",
     version := "0.1.0",
-    scalaVersion := "2.13.16",
+    scalaVersion := "3.3.7",
     scalacOptions ++= Seq("-feature"),
     libraryDependencies ++= Seq(
       "software.amazon.awssdk" % "core"            % awsSdkVersion,
